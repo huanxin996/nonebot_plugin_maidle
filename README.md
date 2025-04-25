@@ -13,6 +13,7 @@
 <div align="center">
 
 ✨ **一个基于NoneBot2的舞萌DX猜歌游戏插件** ✨  
+该项目基于[maidle](https://github.com/Dale2003/maidle)
 支持在QQ群中进行maimai猜歌游戏，提供丰富的提示信息和多样的难度选择。
 
 </div>
@@ -55,6 +56,7 @@ pip install .
 ```
 
 然后确保将插件添加到NoneBot的加载项中。
+"nonebot_plugin_maidle"
 
 ---
 
@@ -65,7 +67,6 @@ pip install .
 - 曲目别名支持：可以通过曲目ID或别名进行搜索和猜测
 - 计时自动结束：游戏10分钟无活动将自动结束
 - 多人游戏支持：群内任何人都可以参与猜测，共享10次猜测机会
-- 图形化反馈：使用表情符号增强交互体验
 
 ---
 
@@ -169,6 +170,11 @@ pip install .
 欢迎提交 Pull Request 或 Issue！如有任何问题或建议，请提issue，我看到后会第一时间处理。
 
 ---
+
+# 感谢 ✨
+
+- [源网站](https://github.com/Dale2003/maidle)
+
 
 <p align="center">✨ 感谢使用 NoneBot Plugin Maidle 插件！✨</p>
 
