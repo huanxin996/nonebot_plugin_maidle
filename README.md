@@ -14,7 +14,7 @@
 
 ✨ **一个基于NoneBot2的舞萌DX猜歌游戏插件** ✨  
 该项目基于[maidle](https://github.com/Dale2003/maidle)
-支持在QQ群中进行maimai猜歌游戏，提供丰富的提示信息和多样的难度选择。
+支持在QQ群中进行maimaiDX猜歌游戏，提供丰富的提示信息和多样的难度选择。
 
 </div>
 
