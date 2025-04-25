@@ -1,0 +1,16 @@
+LICENSE
+MANIFEST.in
+README.md
+setup.py
+nonebot_plugin_maidle/__init__.py
+nonebot_plugin_maidle/commands.py
+nonebot_plugin_maidle/utils.py
+nonebot_plugin_maidle.egg-info/PKG-INFO
+nonebot_plugin_maidle.egg-info/SOURCES.txt
+nonebot_plugin_maidle.egg-info/dependency_links.txt
+nonebot_plugin_maidle.egg-info/requires.txt
+nonebot_plugin_maidle.egg-info/top_level.txt
+nonebot_plugin_maidle/static/alias.json
+nonebot_plugin_maidle/static/all_alias.json
+nonebot_plugin_maidle/static/music_alias.json
+nonebot_plugin_maidle/static/music_info.json

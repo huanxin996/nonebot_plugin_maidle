@@ -1,0 +1,3 @@
+include nonebot_plugin_maidle/*.json
+include nonebot_plugin_maidle/static/*
+recursive-include nonebot_plugin_maidle/static *

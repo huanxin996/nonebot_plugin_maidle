@@ -1,0 +1,4 @@
+nonebot2<3.0.0,>=2.3.0
+nonebot_plugin_alconna>=0.54.0
+nonebot_plugin_apscheduler<0.6.0,>=0.3.0
+aiohttp>=3.0.0
