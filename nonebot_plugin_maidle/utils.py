@@ -150,8 +150,8 @@ class MaidleGame:
         logger.info(f"生成提示，目标ID: {target['id']}，猜测ID: {guess['id']}")
         hints = []
         # ID提示
-        correct_id = target["id"] == guess["id"]
-        hints.append({"text": f"ID: {guess['id']}", "correct": correct_id})
+        #correct_id = target["id"] == guess["id"]
+        #hints.append({"text": f"ID: {guess['id']}", "correct": correct_id})
         # 类型提示
         correct_type = target["type"] == guess["type"] 
         hints.append({"text": f"类型: {guess['type']}", "correct": correct_type})

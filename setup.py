@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="nonebot_plugin_maidle",
-    version="0.0.2",
+    version="0.0.3",
     author="huanxin996",
     author_email="mc.xiaolang@foxmail.com",
     description="基于nonebot的maimai猜歌插件，支持多平台",

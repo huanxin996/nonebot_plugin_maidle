@@ -43,7 +43,7 @@ game_instances: Dict[str, GameInstance] = {}
 
 guess_cmd = on_alconna(
     Alconna(
-        "猜",
+        "猜测",
         Args["id?", str],
         meta=CommandMeta(
             description="提交猜测",
@@ -52,7 +52,9 @@ guess_cmd = on_alconna(
         ),
         separators=[' ', '']
     ),
-    aliases={"guess", "选", "猜测"},
+    aliases={"guess", "选", "猜"},
+    use_cmd_sep=False,
+    skip_for_unmatch=False,
     priority=2,
     block=True
 )
@@ -69,6 +71,7 @@ search_cmd = on_alconna(
         separators=[" ", ""]
     ),
     aliases={"search", "寻找", "找歌"},
+    use_cmd_sep=False,
     priority=2,
     block=True
 )
@@ -78,8 +81,8 @@ maidle_cmd = on_alconna(
     Alconna(
         "猜歌",
         Args["difficulty?", str],
-        Option("--help", help_text="查看帮助信息"),
-        Option("--status", help_text="查看当前游戏状态"),
+        Option("--帮助", help_text="查看帮助信息"),
+        Option("--状态", help_text="查看当前游戏状态"),
         meta=CommandMeta(
             description="舞萌猜歌游戏",
             usage="发送 猜歌 开始游戏",
@@ -87,7 +90,8 @@ maidle_cmd = on_alconna(
         )
     ),
     aliases={"maidle", "猜曲", "maimai猜歌"},
-    priority=3
+    priority=1,
+    block=True
 )
 
 quit_cmd = on_alconna(
@@ -99,7 +103,7 @@ quit_cmd = on_alconna(
             example="结束猜歌"
         )
     ),
-    aliases={"退出猜歌", "结束游戏", "quit", "结束"},
+    aliases={"退出猜歌", "结束游戏"},
     priority=4
 )
 
@@ -195,8 +199,8 @@ def format_activity_time(session_id: str) -> str:
 @maidle_cmd.handle()
 async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
     session_id, user_id, is_group = get_session_info(event)
-    
-    if args.query("--status"):
+    logger.debug(f"{args.options}")
+    if "状态" in args.options:
         try:
             game = get_game_instance(session_id)
             status = game.get_game_status()
@@ -222,17 +226,17 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
             
             await matcher.finish(UniMessage(status_msg))
         except FinishedException:
-            pass
+            await matcher.finish()
         except Exception as e:
             logger.exception(f"获取游戏状态时出错: {str(e)}")
             await matcher.finish(UniMessage(f"获取游戏状态时出错: {str(e)}"))
-    if args.query("--help"):
+    if "帮助" in args.options:
         help_text = (
             f"{get_random_emoji()} 【舞萌猜歌游戏】 {get_random_emoji()}\n"
             "玩法说明：系统会随机选择一首舞萌DX中的歌曲，群里所有人需要通过不断猜测来找出这首歌。\n"
             "每次猜测后，系统会给出提示，帮助你缩小范围。你们共有10次机会猜出正确答案。\n\n"
             "命令列表：\n"
-            "- 猜歌 [难度]：开始游戏，可选难度有 unlimited(默认)、13、13+、14、14+\n"
+            "- 猜歌 [难度]：开始游戏，可选难度有 unlimited(无限制)、13、13+、14、14+\n"
             "- 猜歌 --status：查看当前游戏状态\n"
             "- 搜索 [关键词]：搜索曲目\n"
             "- 猜 [歌曲ID]：提交猜测\n"
