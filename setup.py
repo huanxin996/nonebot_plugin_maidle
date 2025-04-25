@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="nonebot_plugin_maidle",
-    version="0.0.1",
+    version="0.0.2",
     author="huanxin996",
     author_email="mc.xiaolang@foxmail.com",
     description="基于nonebot的maimai猜歌插件，支持多平台",
@@ -16,8 +16,7 @@ setuptools.setup(
     install_requires=[
         'nonebot2>=2.3.0,<3.0.0',
         'nonebot_plugin_alconna>=0.54.0',
-        'nonebot_plugin_apscheduler>=0.3.0,<0.6.0',
-        'aiohttp>=3.0.0'
+        'nonebot_plugin_apscheduler>=0.3.0,<0.6.0'
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
