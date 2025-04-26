@@ -4,7 +4,7 @@ from nonebot import require
 require("nonebot_plugin_alconna")
 from nonebot_plugin_alconna import on_alconna, Alconna, Args, Option, CommandMeta, Arparma
 scheduler = require("nonebot_plugin_apscheduler").scheduler
-from nonebot_plugin_alconna.uniseg import UniMessage,Image
+from nonebot_plugin_alconna.uniseg import UniMessage
 from nonebot.log import logger
 from nonebot.exception import FinishedException
 from typing import Dict, Any, List, Tuple
@@ -92,6 +92,52 @@ quit_cmd = on_alconna(
     priority=4
 )
 
+async def get_cover_image(game: MaidleGame) -> UniMessage:
+    root_dir = os.getcwd()
+    cover_path = os.path.join(root_dir, "Resource", "static", "mai", "cover")
+    music_id = game.target_music["id"]
+    cover_file = None
+    for ext in ["png", "jpg", "jpeg"]:
+        test_path = os.path.join(cover_path, f"{music_id}.{ext}")
+        if os.path.isfile(test_path):
+            cover_file = test_path
+            break
+    if cover_file:
+        try:
+            logger.debug(f"找到原始曲绘文件：{cover_file}")
+            img = Image.open(cover_file)
+            max_size = 800
+            width, height = img.size
+            if width > max_size or height > max_size:
+                ratio = min(max_size / width, max_size / height)
+                new_width = int(width * ratio)
+                new_height = int(height * ratio)
+                logger.info(f"调整曲绘大小: {width}x{height} -> {new_width}x{new_height}")
+                img = img.resize((new_width, new_height), resample=3)
+            byte_io = io.BytesIO()
+            if img.mode == 'RGBA':
+                img = img.convert('RGB')
+                img.save(byte_io, format='JPEG', quality=40, optimize=True)
+            else:
+                img.save(byte_io, format='JPEG', quality=40, optimize=True)
+            byte_io.seek(0)
+            file_size_kb = len(byte_io.getvalue()) / 1024
+            if file_size_kb > 50:
+                compression_ratio = 50 / file_size_kb
+                new_quality = int(30 * compression_ratio)
+                new_quality = max(10, new_quality)
+                logger.debug(f"图片大小超过50KB，再次压缩: {file_size_kb:.2f}KB -> 质量:{new_quality}")
+                byte_io = io.BytesIO()
+                img.save(byte_io, format='JPEG', quality=new_quality, optimize=True)
+                byte_io.seek(0)
+                file_size_kb = len(byte_io.getvalue()) / 1024
+            logger.debug(f"处理后原始曲绘文件大小: {file_size_kb:.2f} KB")
+            cover_image = UniMessage.image(raw=byte_io.getvalue())
+            return cover_image
+            
+        except Exception as e:
+            logger.error(f"处理原始曲绘图片时出错: {str(e)}")  
+            return None
 
 def get_game_instance(session_id: str) -> MaidleGame:
     """获取或创建会话的游戏实例"""
@@ -242,6 +288,11 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
         if difficulty not in valid_difficulties:
             await matcher.finish(UniMessage(f"{get_mood_emoji()} 无效的难度参数！可选值：{', '.join(valid_difficulties)}"))
         if game.start_game(difficulty):
+            game.add_player(user_id)
+            update_game_activity(session_id)
+            session_type = "本群" if is_group else "私聊"
+            difficulty_emoji = get_difficulty_emoji(difficulty)
+            target_music = game.target_music
             if target_music and "id" in target_music:
                 root_dir = os.getcwd()
                 cover_path = os.path.join(root_dir, "Resource", "static", "mai", "cover")
@@ -256,6 +307,7 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
                     try:
                         logger.info(f"找到曲绘文件：{cover_file}")
                         img = Image.open(cover_file)
+                        img = img.convert('L')
                         max_size = 800
                         width, height = img.size
                         if width > max_size or height > max_size:
@@ -263,12 +315,12 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
                             new_width = int(width * ratio)
                             new_height = int(height * ratio)
                             logger.info(f"调整曲绘大小: {width}x{height} -> {new_width}x{new_height}")
-                            img = img.resize((new_width, new_height), Image.LANCZOS)
+                            img = img.resize((new_width, new_height), resample=3)
                             width, height = new_width, new_height
                         img = img.filter(ImageFilter.GaussianBlur(radius=8))
                         cell_w, cell_h = width // 4, height // 4
                         mask = Image.new('RGBA', img.size, (255, 255, 255, 0))
-                        cells = [(x, y) for x in range(4) for y in range(4)]
+                        cells = [(x, y) for x in range(6) for y in range(6)]
                         keep_cells = random.sample(cells, k=int(len(cells) * 0.6))
                         for x, y in keep_cells:
                             box = (x * cell_w, y * cell_h, (x + 1) * cell_w, (y + 1) * cell_h)
@@ -278,19 +330,14 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
                         if img.mode == 'RGBA':
                             mask.save(byte_io, format='PNG', optimize=True)
                         else:
-                            mask.convert('RGB').save(byte_io, format='JPEG', quality=80, optimize=True)
+                            mask.convert('RGB').save(byte_io, format='JPEG', quality=60, optimize=True)
                         byte_io.seek(0)
-                        cover_image = Image(raw=byte_io.getvalue())
+                        cover_image = UniMessage.image(raw=byte_io.getvalue())
                         file_size_kb = len(byte_io.getvalue()) / 1024
                         logger.debug(f"处理后曲绘文件大小: {file_size_kb:.2f} KB")
                     except Exception as e:
                         logger.error(f"处理曲绘图片时出错: {str(e)}")
                         cover_image = None
-            game.add_player(user_id)
-            update_game_activity(session_id)
-            session_type = "本群" if is_group else "私聊"
-            difficulty_emoji = get_difficulty_emoji(difficulty)
-            target_music = game.target_music
             random_tips = []
             # 1个提示: 80%, 2个提示: 15%, 3个提示: 5%
             tip_count = random.choices([1, 2, 3], weights=[75, 15, 5])[0]
@@ -444,7 +491,11 @@ async def handle_guess(event: Event, matcher: Matcher, args: Arparma):
         update_game_activity(session_id)
         hints_text = format_hints(result["hints"])
         response_msg = f"{result['message']}\n{hints_text}"
+        message_elements = []
+        cover_image = None
         if result.get("game_over", False):
+            if game.target_music and "id" in game.target_music:
+                cover_image = await get_cover_image(game)
             if result.get("win", False):
                 players = result.get("players", [])
                 players_count = len(players)
@@ -457,7 +508,12 @@ async def handle_guess(event: Event, matcher: Matcher, args: Arparma):
         else:
             remaining = 10 - len(game.guesses)
             response_msg += f"\n\n⏳ 还剩 {remaining} 次猜测机会"
-        response = UniMessage(response_msg)
+        if cover_image:
+            message_elements.append(cover_image)
+            message_elements.append("\n")
+        
+        message_elements.append(response_msg)
+        response = UniMessage(message_elements)
         if is_group:
             response = response.at(user_id)
         await matcher.finish(response)
@@ -480,10 +536,19 @@ async def handle_quit(event: Event, matcher: Matcher):
             await matcher.finish(UniMessage(f"{get_mood_emoji()} {result['message']}"))
         players = result.get("players", [])
         players_count = len(players)
+        message_elements = []
+        cover_image = None
         end_msg = f"{get_random_emoji()} {result['message']}\n"
         end_msg += f"本局游戏共有 {players_count} 名玩家参与 👥"
+        cover_image = None
+        if game.target_music and "id" in game.target_music:
+            cover_image = await get_cover_image(game)
+        if cover_image:
+            message_elements.append(cover_image)
+            message_elements.append("\n")
+        message_elements.append(end_msg)
         del game_instances[session_id]
-        await matcher.finish(UniMessage(end_msg))
+        await matcher.finish(UniMessage(message_elements))
     except FinishedException:
             pass
     except Exception as e:
