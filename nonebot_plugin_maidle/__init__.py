@@ -11,7 +11,7 @@ __plugin_meta__ = PluginMetadata(
         "- 猜歌"
         "技术支持：\n"
         "基于  nonebot-plugin-alconna来处理命令和消息发送\n"
-        "感谢以上插件作者以及 NoneBot2 团队"
+        "感谢以上插件作者以及 NoneBot2"
     ),
     type="application",
     homepage="https://github.com/huanxin996/nonebot_plugin_maidle",

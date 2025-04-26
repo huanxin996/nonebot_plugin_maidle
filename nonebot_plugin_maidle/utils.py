@@ -1,8 +1,188 @@
-import random, os, json,random
+import random, os, json,random,aiohttp
 from nonebot.adapters import Event
+from datetime import datetime, timedelta
 from nonebot.log import logger
 from typing import Tuple, Dict, List, Any, Optional
 
+class PopularityManager:
+    """管理歌曲热度数据的类"""
+    
+    def __init__(self):
+        self.maimai_data = None
+        self.last_updated = None
+        self.cache_file = os.path.join(os.path.dirname(__file__), "static", "maimai_stats_cache.json")
+        self.popularity_cache = {}  # 缓存歌曲热度，key为歌曲ID或标题
+        logger.info("PopularityManager实例已初始化")
+    
+    async def get_maimai_data(self) -> Dict[str, Any]:
+        """获取MaiMai DX曲目数据，包含热度信息"""
+        if self.maimai_data and self.last_updated:
+            if datetime.now() - self.last_updated < timedelta(days=1):
+                logger.debug("使用内存中缓存的MaiMai数据")
+                return self.maimai_data
+        logger.info("正在获取最新的MaiMai曲目统计数据...")
+        try:
+            if os.path.exists(self.cache_file):
+                file_mtime = datetime.fromtimestamp(os.path.getmtime(self.cache_file))
+                if datetime.now() - file_mtime < timedelta(days=1):
+                    try:
+                        with open(self.cache_file, "r", encoding="utf-8") as f:
+                            cache_data = json.load(f)
+                            if isinstance(cache_data, dict) and len(cache_data) > 0:
+                                self.maimai_data = cache_data
+                                self.last_updated = file_mtime
+                                logger.info(f"从缓存文件加载了MaiMai统计数据，共 {len(cache_data)} 首歌")
+                                return self.maimai_data
+                            else:
+                                logger.warning(f"缓存文件格式不正确，将重新获取数据")
+                    except Exception as e:
+                        logger.warning(f"读取缓存文件失败: {str(e)}")
+            async with aiohttp.ClientSession() as session:
+                async with session.get("https://www.diving-fish.com/api/maimaidxprober/chart_stats") as response:
+                    if response.status == 200:
+                        raw_data = await response.json()
+                        logger.debug(f"API返回数据类型: {type(raw_data)}")
+                        if isinstance(raw_data, dict):
+                            keys = list(raw_data.keys())
+                            logger.debug(f"API数据所有顶层键: {keys}")
+                            first_key = next(iter(raw_data.keys())) if raw_data else None
+                            logger.debug(f"API数据第一个键: {first_key}")
+                            if first_key and first_key in raw_data:
+                                first_value = raw_data[first_key]
+                                logger.debug(f"数据样例: {first_key} -> {type(first_value)}")
+                        processed_data = {}
+                        song_count = 0
+                        if "charts" in raw_data and isinstance(raw_data["charts"], dict):
+                            charts_data = raw_data["charts"]
+                            for song_id, song_charts in charts_data.items():
+                                song_id = str(song_id)
+                                total_plays = 0
+                                if not isinstance(song_charts, list):
+                                    logger.debug(f"歌曲 {song_id} 的数据不是列表: {type(song_charts)}")
+                                    continue
+                                for chart in song_charts:
+                                    if not chart or not isinstance(chart, dict):
+                                        continue
+                                    if "cnt" in chart and chart["cnt"] is not None:
+                                        try:
+                                            cnt_value = float(chart["cnt"])
+                                            total_plays += cnt_value
+                                            logger.debug(f"歌曲 {song_id} 难度 {chart.get('diff', 'unknown')} 的游玩次数: {cnt_value}")
+                                        except (ValueError, TypeError) as e:
+                                            logger.warning(f"无法解析游玩次数: {chart['cnt']}, 错误: {e}")
+                                if total_plays > 0:
+                                    processed_data[song_id] = {
+                                        "id": song_id,
+                                        "popularity": int(total_plays)
+                                    }
+                                    song_count += 1
+                                    if song_count <= 5:
+                                        logger.debug(f"处理歌曲 {song_id}: 总游玩次数 = {total_plays}")
+                        else:
+                            logger.debug("API数据中没有找到'charts'键，或者它不是字典类型")
+                        logger.debug(f"共处理了 {song_count} 首歌曲数据")
+                        if processed_data:
+                            sorted_songs = sorted(processed_data.items(), 
+                                                key=lambda x: x[1]["popularity"],
+                                                reverse=True)
+                            for rank, (song_id, info) in enumerate(sorted_songs):
+                                processed_data[song_id]["rank"] = rank + 1
+                            logger.debug("热门歌曲TOP5:")
+                            for i, (song_id, info) in enumerate(sorted_songs[:5]):
+                                logger.info(f"第{i+1}名: ID={song_id}, 游玩次数={info['popularity']}")
+                        else:
+                            logger.warning("处理后没有有效的歌曲数据!")      
+                        self.maimai_data = processed_data
+                        self.last_updated = datetime.now()
+                        try:
+                            os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+                            with open(self.cache_file, "w", encoding="utf-8") as f:
+                                json.dump(processed_data, f, ensure_ascii=False, indent=2)
+                                logger.info(f"已缓存MaiMai统计数据到文件，共 {len(processed_data)} 首歌")
+                        except Exception as e:
+                            logger.warning(f"写入缓存文件失败: {str(e)}")
+                        return processed_data
+                    else:
+                        logger.error(f"获取MaiMai数据失败: HTTP {response.status}")
+                        raise Exception(f"HTTP error: {response.status}")
+        except Exception as e:
+            logger.error(f"获取MaiMai数据时出错: {str(e)}")
+            if self.maimai_data:
+                logger.warning("使用旧的缓存数据")
+                return self.maimai_data
+            return {}
+            
+    async def get_song_popularity(self, song_id: str) -> Dict[str, Any]:
+        """获取歌曲热度信息"""
+        # 如果已缓存，直接返回
+        if song_id in self.popularity_cache:
+            return self.popularity_cache[song_id]
+        
+        # 获取数据并查找
+        maimai_data = await self.get_maimai_data()
+        if song_id in maimai_data:
+            self.popularity_cache[song_id] = maimai_data[song_id]
+            return maimai_data[song_id]
+        
+        logger.debug(f"未找到歌曲ID: {song_id} 的热度信息")
+        return {
+            "id": song_id,
+            "popularity": 0,
+            "rank": 0
+        }
+    
+    async def add_popularity_to_matches(self, matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """为搜索结果添加热度信息"""
+        if not matches:
+            return matches
+        
+        maimai_data = await self.get_maimai_data()
+        for match in matches:
+            song_id = match.get("id", "")
+            
+            # 如果ID在MaiMai数据中，获取热度
+            if song_id in maimai_data:
+                popularity_info = maimai_data[song_id]
+                match["popularity"] = popularity_info["popularity"]
+                match["popularity_rank"] = popularity_info.get("rank", 0)
+                logger.debug(f"为歌曲 ID:{song_id} 添加热度: {match['popularity']}")
+            else:
+                match["popularity"] = 0
+                match["popularity_rank"] = 0
+                logger.debug(f"未找到歌曲 ID:{song_id} 的热度信息")
+        
+        return matches
+    
+    async def sort_matches_by_popularity(self, matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """根据热度对匹配结果进行排序"""
+        if not matches:
+            return matches
+        
+        matches_with_popularity = await self.add_popularity_to_matches(matches)
+        sorted_matches = sorted(matches_with_popularity, key=lambda x: x.get("popularity", 0), reverse=True)
+        
+        logger.debug("按热度排序后的匹配结果:")
+        for i, match in enumerate(sorted_matches[:5]):  # 只显示前5个
+            logger.debug(f"{i+1}. {match.get('title')} (ID: {match.get('id')}) - 热度排名: {match.get('popularity_rank', 0)} 游玩次数: {match.get('popularity', 0)}")
+        
+        return sorted_matches
+
+    def format_popularity_info(self, song_info: Dict[str, Any]) -> str:
+        """格式化歌曲热度信息为可读字符串"""
+        if not song_info or "popularity" not in song_info:
+            return "无热度数据"
+        
+        popularity = song_info["popularity"]
+        if popularity <= 0:
+            return "无热度数据"
+        
+        rank_info = ""
+        if "popularity_rank" in song_info and song_info["popularity_rank"] > 0:
+            rank = song_info["popularity_rank"]
+            rank_info = f" (排名#{rank})"
+        
+        return f"热度: {popularity}{rank_info}"
+    
 def get_session_id(event: Event) -> Tuple[bool, str]:
     """
     获取会话ID，如果是群聊则返回群ID，私聊则返回用户ID
@@ -379,13 +559,13 @@ def get_mood_emoji(is_correct: bool = False, is_close: bool = False) -> str:
     根据猜测的正确度获取表情
     """
     if is_correct:
-        correct_emojis = ["🎉", "🎊", "🥳", "🙌", "👏", "🤩", "✅", "💯", "🏆", "🔥"]
+        correct_emojis = ["🎉", "🥳", "✅"]
         return random.choice(correct_emojis)
     elif is_close:
-        close_emojis = ["🤔", "🧐", "🤏", "👀", "💭", "🔍", "🤏", "↕️", "↔️", "📊"]
+        close_emojis = ["🤔", "🧐"]
         return random.choice(close_emojis)
     else:
-        wrong_emojis = ["❌", "🙅", "🤷", "😕", "🤦", "😓", "😬", "🥺", "😢", "⛔"]
+        wrong_emojis = ["❌", "⛔"]
         return random.choice(wrong_emojis)
 
 def get_difficulty_emoji(difficulty: str) -> str:

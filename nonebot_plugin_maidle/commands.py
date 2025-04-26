@@ -10,19 +10,20 @@ from nonebot.log import logger
 from nonebot.params import CommandArg
 from nonebot.exception import FinishedException
 from typing import Dict, Any, List, Tuple
-import re,time,asyncio
+import re,time,random
 
 
 
 from .utils import (
     MaidleGame, 
+    PopularityManager,
     get_session_id, 
     get_random_emoji, 
     get_mood_emoji, 
     get_difficulty_emoji
 )
 
-
+popularity_manager = PopularityManager()
 
 class GameInstance:
     def __init__(self, game: MaidleGame):
@@ -44,7 +45,7 @@ game_instances: Dict[str, GameInstance] = {}
 guess_cmd = on_alconna(
     Alconna(
         "猜测",
-        Args["id?", str],
+        Args["keyword?", str],
         meta=CommandMeta(
             description="提交猜测",
             usage="发送 猜 [歌曲ID]",
@@ -59,37 +60,19 @@ guess_cmd = on_alconna(
     block=True
 )
 
-search_cmd = on_alconna(
-    Alconna(
-        "搜索",
-        Args["keyword?", str],
-        meta=CommandMeta(
-            description="搜索舞萌曲目",
-            usage="发送 搜索 [关键词]",
-            example="搜索 碧蓝航线"
-        ),
-        separators=[" ", ""]
-    ),
-    aliases={"search", "寻找", "找歌"},
-    use_cmd_sep=False,
-    priority=2,
-    block=True
-)
-
-
 maidle_cmd = on_alconna(
     Alconna(
-        "猜歌",
+        "maidle",
         Args["difficulty?", str],
-        Option("--帮助", help_text="查看帮助信息"),
-        Option("--状态", help_text="查看当前游戏状态"),
+        Option("帮助", help_text="查看帮助信息"),
+        Option("状态", help_text="查看当前游戏状态"),
         meta=CommandMeta(
             description="舞萌猜歌游戏",
             usage="发送 猜歌 开始游戏",
             example="猜歌 13+"
         )
     ),
-    aliases={"maidle", "猜曲", "maimai猜歌"},
+    aliases={"猜歌", "猜曲", "maimai猜歌"},
     priority=1,
     block=True
 )
@@ -211,7 +194,7 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
             last_activity = format_activity_time(session_id)
             
             status_msg = (
-                f"{get_random_emoji()} 【舞萌猜歌】当前状态 {get_random_emoji()}\n"
+                f"\n{get_random_emoji()} 【舞萌猜歌】当前状态 {get_random_emoji()}\n"
                 f"难度: {status['difficulty']} {get_difficulty_emoji(status['difficulty'])}\n"
                 f"已猜测次数: {status['guesses_count']}/10\n"
                 f"参与人数: {status['players_count']} 👥\n"
@@ -232,14 +215,13 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
             await matcher.finish(UniMessage(f"获取游戏状态时出错: {str(e)}"))
     if "帮助" in args.options:
         help_text = (
-            f"{get_random_emoji()} 【舞萌猜歌游戏】 {get_random_emoji()}\n"
+            f"\n{get_random_emoji()} 【舞萌猜歌游戏】 {get_random_emoji()}\n"
             "玩法说明：系统会随机选择一首舞萌DX中的歌曲，群里所有人需要通过不断猜测来找出这首歌。\n"
             "每次猜测后，系统会给出提示，帮助你缩小范围。你们共有10次机会猜出正确答案。\n\n"
             "命令列表：\n"
             "- 猜歌 [难度]：开始游戏，可选难度有 unlimited(无限制)、13、13+、14、14+\n"
-            "- 猜歌 --status：查看当前游戏状态\n"
-            "- 搜索 [关键词]：搜索曲目\n"
-            "- 猜 [歌曲ID]：提交猜测\n"
+            "- 猜歌 状态：查看当前游戏状态\n"
+            "- 猜 [歌曲ID或歌名]：提交猜测\n"
             "- 结束猜歌：结束当前游戏\n\n"
             "※ 游戏将在10分钟无活动后自动结束"
         )
@@ -262,11 +244,75 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
             update_game_activity(session_id)
             session_type = "本群" if is_group else "私聊"
             difficulty_emoji = get_difficulty_emoji(difficulty)
+            target_music = game.target_music
+            random_tips = []
+            # 1个提示: 80%, 2个提示: 15%, 3个提示: 5%
+            tip_count = random.choices([1, 2, 3], weights=[75, 15, 5])[0]
+            logger.debug(f"随机选择提供 {tip_count} 个提示")
+            tip_types = [
+                # (提示类型, 权重)
+                #("genre", 30),        # 曲风
+                #("artist", 25),       # 艺术家
+                ("bpm", 5),          # BPM
+                ("version", 25),      # 版本
+                ("red_const", 10),    # 红谱定数
+                ("purple_const", 10),  # 紫谱定数
+                #("charter", 7),       # 谱师
+                ("masbreak", 5)      # Break数
+            ]
+            
+            # 随机选择不重复的提示类型
+            selected_types = random.sample([t[0] for t in tip_types], k=min(tip_count, len(tip_types)))
+            logger.debug(f"选择的提示类型: {selected_types}")
+            
+            if target_music:
+                # 处理每种提示类型
+                for tip_type in selected_types:
+                    tip_text = ""
+                    
+                    if tip_type == "genre" and "genre" in target_music:
+                        genre = target_music["genre"]
+                        tip_text = f"🔍 提示：该曲目所属曲风为「{genre}」"
+                    
+                    elif tip_type == "artist" and "artist" in target_music:
+                        artist = target_music["artist"]
+                        tip_text = f"🔍 提示：该曲目艺术家为「{artist}」"
+                    
+                    elif tip_type == "bpm" and "bpm" in target_music and target_music["bpm"]:
+                        bpm = target_music["bpm"]
+                        tip_text = f"🔍 提示：该曲目BPM为 {bpm}"
+                    
+                    elif tip_type == "version" and "version" in target_music:
+                        version = target_music["version"]
+                        tip_text = f"🔍 提示：该曲目来自「{version}」版本"
+                    
+                    elif tip_type == "red_const" and "ds" in target_music and len(target_music["ds"]) >= 3:
+                        red_const = target_music["ds"][2]
+                        tip_text = f"🔍 提示：该曲目红谱定数为 {red_const}"
+                    
+                    elif tip_type == "purple_const" and "ds" in target_music and len(target_music["ds"]) >= 4:
+                        purple_const = target_music["ds"][3]
+                        tip_text = f"🔍 提示：该曲目紫谱定数为 {purple_const}"
+                    
+                    elif tip_type == "charter" and "mascharter" in target_music and target_music["mascharter"]:
+                        charter = target_music["mascharter"]
+                        tip_text = f"🔍 提示：该曲目Master谱面的谱师为「{charter}」"
+                    
+                    elif tip_type == "masbreak" and "masbreak" in target_music:
+                        masbreak = target_music["masbreak"]
+                        tip_text = f"🔍 提示：该曲目Master谱面的Break数为 {masbreak}"
+                    if tip_text:
+                        random_tips.append(tip_text)
             start_msg = (
-                f"{get_random_emoji()} 【舞萌猜歌】游戏开始！ {get_random_emoji()}\n"
+                f"\n{get_random_emoji()} 【舞萌猜歌】游戏开始！ {get_random_emoji()}\n"
                 f"难度：{difficulty} {difficulty_emoji}\n"
                 f"{session_type}所有人共有10次机会猜出正确的曲目。\n"
-                f"使用 搜索 [关键词] 来查找曲目，然后使用 猜 [歌曲ID] 来提交猜测。\n"
+                f"使用 猜 [歌曲ID或歌名] 来提交猜测。\n"
+            )
+            if random_tips:
+                for tip in random_tips:
+                    start_msg += f"{tip}\n"
+            start_msg += (
                 f"游戏将在10分钟无活动后自动结束。\n"
                 f"祝你好运！ 🍀"
             )
@@ -279,85 +325,92 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
         logger.exception(f"启动猜歌游戏时出错: {str(e)}")
         await matcher.finish(UniMessage(f"启动游戏时出错: {str(e)}"))
 
-@search_cmd.handle()
-async def handle_search(event: Event, matcher: Matcher, args: Arparma):
-    session_id, user_id, is_group = get_session_info(event)
-    keyword = args.query("keyword")
-    if keyword is None:
-        await matcher.finish(UniMessage(f"{get_mood_emoji()} 请提供搜索关键词！"))
-    
-    try:
-        game = get_game_instance(session_id)
-        matches = game.search_matches(keyword)
-        if not matches:
-            await matcher.finish(UniMessage(f"{get_mood_emoji()} 未找到与 '{keyword}' 相关的曲目，请尝试其他关键词。"))
-        update_game_activity(session_id)
-        max_display = 10
-        truncated = len(matches) > max_display
-        matches = matches[:max_display]
-        result_msg = f"{get_random_emoji()} 找到 {len(matches)}{' (部分)' if truncated else ''} 个匹配结果：\n"
-        for i, match in enumerate(matches):
-            result_msg += f"{i+1}. {match['title']} (ID: {match['id']})\n"
-        result_msg += f"\n{get_random_emoji()} 使用 猜 [歌曲ID] 来提交猜测"
-        if not is_group:
-            result_msg += "\n请注意：猜歌游戏是群组共享的，你的猜测将计入群组的猜测次数。"
-        
-        await matcher.finish(UniMessage(result_msg))
-    except FinishedException:
-            pass
-    except Exception as e:
-        logger.exception(f"搜索曲目时出错: {str(e)}")
-        await matcher.finish(UniMessage(f"搜索出错: {str(e)}"))
-
 @guess_cmd.handle()
 async def handle_guess(event: Event, matcher: Matcher, args: Arparma):
     session_id, user_id, is_group = get_session_info(event)
     raw_text = event.get_plaintext().strip()
-    guess_id = None
+    guess_text = None
     for prefix in ["猜", "guess", "选", "猜测"]:
         if raw_text.startswith(prefix) and len(raw_text) > len(prefix):
-            guess_id = raw_text[len(prefix):].strip()
-            logger.debug(f"检测到无空格猜测: {raw_text} -> {guess_id}")
+            guess_text = raw_text[len(prefix):].strip()
+            logger.debug(f"检测到无空格猜测: {raw_text} -> {guess_text}")
             break
-    if guess_id is None:
-        direct_guess = args.query("id")
-        if direct_guess and (re.match(r'^\d+$', direct_guess) or re.match(r'^[a-zA-Z0-9]+$', direct_guess)):
-            guess_id = direct_guess
-            logger.debug(f"检测到直接ID猜测: {direct_guess}")
+    if guess_text is None:
+        guess_text = args.query("keyword")
+        if guess_text:
+            if re.match(r'^\d+$', guess_text) or re.match(r'^[a-zA-Z0-9]+$', guess_text):
+                logger.debug(f"检测到ID猜测: {guess_text}")
+            else:
+                logger.debug(f"检测到别名猜测: {guess_text}")
         else:
-            guess_id = direct_guess
-            logger.debug(f"标准格式猜测: {guess_id}")
-    if not guess_id:
-        logger.debug("猜测ID为空")
-        await matcher.finish(UniMessage(f"{get_mood_emoji()} 请提供歌曲ID或别名！"))
+            logger.debug("猜测内容为空")
+    if not guess_text:
+        await matcher.finish(UniMessage(f"{get_mood_emoji()} 请提供歌曲ID或歌曲名称！"))
     try:
         game = get_game_instance(session_id)
         if not game.is_playing:
             await matcher.finish(UniMessage(f"{get_mood_emoji()} 当前没有进行中的猜歌游戏！发送 猜歌 来开始游戏。"))
-        result = game.submit_guess(guess_id, user_id)
+        if re.match(r'^\d+$', guess_text) or re.match(r'^[a-zA-Z0-9]+$', guess_text):
+            logger.debug(f"直接使用ID猜测: {guess_text}")
+            result = game.submit_guess(guess_text, user_id)
+        else:
+            logger.debug(f"尝试搜索匹配歌曲名称: {guess_text}")
+            matches = game.search_matches(guess_text)
+            if not matches:
+                await matcher.finish(UniMessage(f"{get_mood_emoji()} 未找到与 '{guess_text}' 匹配的歌曲，请尝试使用更准确的名称或歌曲ID。"))
+            else:
+                sorted_matches = await popularity_manager.sort_matches_by_popularity(matches)
+                best_match = sorted_matches[0]
+                match_id = best_match["id"]
+                match_title = best_match["title"]
+                popularity = best_match.get("popularity", 0)
+                target_id = game.target_music.get("id") if game.target_music else None
+                has_correct = False
+                correct_rank = -1
+                for idx, match in enumerate(sorted_matches):
+                    if match["id"] == target_id:
+                        has_correct = True
+                        correct_rank = idx + 1
+                        break
+                
+                additional_info = ""
+                if has_correct and correct_rank > 1:
+                    if correct_rank <= 5:
+                        additional_info += f"\n💡 提示：您的搜索结果中包含正确答案，但不是排名第一的结果。"
+                    else:
+                        additional_info += f"\n💡 提示：正确答案可能在您的搜索结果中，请尝试更精确的关键词。"
+                logger.debug(f"使用热度最高的匹配项进行猜测: {match_id} ({match_title}) - 热度: {popularity}")
+                if len(matches) == 1:
+                    result = game.submit_guess(match_id, user_id)
+                else:
+                    result = game.submit_guess(match_id, user_id)
+                    if result["success"]:
+                        #popularity_text = f"(热度: {popularity})" if popularity > 0 else ""
+                        result["message"] = f"\n使用'{match_title}'进行猜测。\n" + result["message"] + f"{additional_info}"
         if not result["success"]:
             await matcher.finish(UniMessage(f"{get_mood_emoji()} {result['message']}"))
         update_game_activity(session_id)
         hints_text = format_hints(result["hints"])
-        response_msg = f"{result['message']}\n\n{hints_text}"
+        response_msg = f"{result['message']}\n{hints_text}"
         if result.get("game_over", False):
             if result.get("win", False):
-                #winner = result.get("winner", "未知玩家")
                 players = result.get("players", [])
                 players_count = len(players)
                 response_msg += f"\n\n{get_mood_emoji(is_correct=True)} 恭喜你 赢得了游戏！{get_mood_emoji(is_correct=True)}"
                 response_msg += f"\n本局游戏共有 {players_count} 名玩家参与 👥"
             else:
-                response_msg += f"\n\n{get_mood_emoji()} 游戏结束，已用完所有猜测机会。祝你下次好运！"
+                response_msg += f"\n\n{get_mood_emoji()} 游戏结束，已用完所有猜测机会。祝下次好运！"
             if session_id in game_instances:
                 del game_instances[session_id]
         else:
             remaining = 10 - len(game.guesses)
             response_msg += f"\n\n⏳ 还剩 {remaining} 次猜测机会"
-        
-        await matcher.finish(UniMessage(response_msg))
+        response = UniMessage(response_msg)
+        if is_group:
+            response = response.at(user_id)
+        await matcher.finish(response)
     except FinishedException:
-            pass
+        pass
     except Exception as e:
         logger.exception(f"提交猜测时出错: {str(e)}")
         await matcher.finish(UniMessage(f"猜测出错: {str(e)}"))

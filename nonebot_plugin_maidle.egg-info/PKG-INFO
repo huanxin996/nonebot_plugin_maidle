@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: nonebot_plugin_maidle
-Version: 0.0.3
+Version: 0.0.4
 Summary: 基于nonebot的maimai猜歌插件，支持多平台
 Home-page: https://github.com/huanxin996/nonebot_plugin_maidle
 Author: huanxin996
@@ -41,7 +41,7 @@ Dynamic: summary
 
 ✨ **一个基于NoneBot2的舞萌DX猜歌游戏插件** ✨  
 该项目基于[maidle](https://github.com/Dale2003/maidle)
-支持在QQ群中进行maimai猜歌游戏，提供丰富的提示信息和多样的难度选择。
+支持在QQ群中进行maimaiDX猜歌游戏，提供丰富的提示信息和多样的难度选择。
 
 </div>
 
