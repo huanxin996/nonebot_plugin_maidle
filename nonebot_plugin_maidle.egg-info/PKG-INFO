@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: nonebot_plugin_maidle
-Version: 0.0.4
+Version: 0.0.5
 Summary: 基于nonebot的maimai猜歌插件，支持多平台
 Home-page: https://github.com/huanxin996/nonebot_plugin_maidle
 Author: huanxin996
@@ -14,6 +14,8 @@ License-File: LICENSE
 Requires-Dist: nonebot2<3.0.0,>=2.3.0
 Requires-Dist: nonebot_plugin_alconna>=0.54.0
 Requires-Dist: nonebot_plugin_apscheduler<0.6.0,>=0.3.0
+Requires-Dist: aiohttp>=3.0.0
+Requires-Dist: pillow>=10.0.0
 Dynamic: author
 Dynamic: author-email
 Dynamic: classifier

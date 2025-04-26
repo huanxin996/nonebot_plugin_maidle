@@ -1,16 +1,16 @@
 from nonebot.adapters import Event
 from nonebot.matcher import Matcher
-from nonebot.adapters import Message
-from nonebot import require, on_command
+from nonebot import require
 require("nonebot_plugin_alconna")
 from nonebot_plugin_alconna import on_alconna, Alconna, Args, Option, CommandMeta, Arparma
 scheduler = require("nonebot_plugin_apscheduler").scheduler
-from nonebot_plugin_alconna.uniseg import UniMessage
+from nonebot_plugin_alconna.uniseg import UniMessage,Image
 from nonebot.log import logger
-from nonebot.params import CommandArg
 from nonebot.exception import FinishedException
 from typing import Dict, Any, List, Tuple
-import re,time,random
+from PIL import Image, ImageFilter
+from pathlib import Path
+import re,time,random,re,os,io
 
 
 
@@ -42,6 +42,7 @@ class GameInstance:
 
 game_instances: Dict[str, GameInstance] = {}
 
+
 guess_cmd = on_alconna(
     Alconna(
         "猜测",
@@ -51,7 +52,7 @@ guess_cmd = on_alconna(
             usage="发送 猜 [歌曲ID]",
             example="猜 655"
         ),
-        separators=[' ', '']
+        separators=[' ', ''],
     ),
     aliases={"guess", "选", "猜"},
     use_cmd_sep=False,
@@ -70,7 +71,8 @@ maidle_cmd = on_alconna(
             description="舞萌猜歌游戏",
             usage="发送 猜歌 开始游戏",
             example="猜歌 13+"
-        )
+        ),
+        separators=[' ', ''],
     ),
     aliases={"猜歌", "猜曲", "maimai猜歌"},
     priority=1,
@@ -240,6 +242,50 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
         if difficulty not in valid_difficulties:
             await matcher.finish(UniMessage(f"{get_mood_emoji()} 无效的难度参数！可选值：{', '.join(valid_difficulties)}"))
         if game.start_game(difficulty):
+            if target_music and "id" in target_music:
+                root_dir = os.getcwd()
+                cover_path = os.path.join(root_dir, "Resource", "static", "mai", "cover")
+                music_id = target_music["id"]
+                cover_file = None
+                for ext in ["png", "jpg", "jpeg"]:
+                    test_path = os.path.join(cover_path, f"{music_id}.{ext}")
+                    if os.path.isfile(test_path):
+                        cover_file = test_path
+                        break
+                if cover_file:
+                    try:
+                        logger.info(f"找到曲绘文件：{cover_file}")
+                        img = Image.open(cover_file)
+                        max_size = 800
+                        width, height = img.size
+                        if width > max_size or height > max_size:
+                            ratio = min(max_size / width, max_size / height)
+                            new_width = int(width * ratio)
+                            new_height = int(height * ratio)
+                            logger.info(f"调整曲绘大小: {width}x{height} -> {new_width}x{new_height}")
+                            img = img.resize((new_width, new_height), Image.LANCZOS)
+                            width, height = new_width, new_height
+                        img = img.filter(ImageFilter.GaussianBlur(radius=8))
+                        cell_w, cell_h = width // 4, height // 4
+                        mask = Image.new('RGBA', img.size, (255, 255, 255, 0))
+                        cells = [(x, y) for x in range(4) for y in range(4)]
+                        keep_cells = random.sample(cells, k=int(len(cells) * 0.6))
+                        for x, y in keep_cells:
+                            box = (x * cell_w, y * cell_h, (x + 1) * cell_w, (y + 1) * cell_h)
+                            cell_img = img.crop(box)
+                            mask.paste(cell_img, box)
+                        byte_io = io.BytesIO()
+                        if img.mode == 'RGBA':
+                            mask.save(byte_io, format='PNG', optimize=True)
+                        else:
+                            mask.convert('RGB').save(byte_io, format='JPEG', quality=80, optimize=True)
+                        byte_io.seek(0)
+                        cover_image = Image(raw=byte_io.getvalue())
+                        file_size_kb = len(byte_io.getvalue()) / 1024
+                        logger.debug(f"处理后曲绘文件大小: {file_size_kb:.2f} KB")
+                    except Exception as e:
+                        logger.error(f"处理曲绘图片时出错: {str(e)}")
+                        cover_image = None
             game.add_player(user_id)
             update_game_activity(session_id)
             session_type = "本群" if is_group else "私聊"
@@ -316,7 +362,13 @@ async def handle_maidle(event: Event, matcher: Matcher, args: Arparma):
                 f"游戏将在10分钟无活动后自动结束。\n"
                 f"祝你好运！ 🍀"
             )
-            await matcher.finish(UniMessage(start_msg))
+            message_elements = []
+            if cover_image:
+                message_elements.append(cover_image)
+                message_elements.append("\n")
+            
+            message_elements.append(start_msg)
+            await matcher.finish(UniMessage(message_elements))
         else:
             await matcher.finish(UniMessage(f"{get_mood_emoji()} 游戏启动失败！可能没有符合难度 {difficulty} 的曲目。"))
     except FinishedException:
